@@ -8,6 +8,12 @@
 
 
 #include <iostream>
+
+union char2f{
+    char c[4];
+    float f;
+};
+
 int main(int argc , char** argv)
 {
     /******************************************************************************/
@@ -35,7 +41,7 @@ int main(int argc , char** argv)
     pipeline = new libfreenect2::CpuPacketPipeline();
     dev = freenect2.openDevice(serial , pipeline);
 
-    int type = libfreenect2::Frame::Color; //only RGB
+    int type = libfreenect2::Frame::Color | libfreenect2::Frame::Ir | libfreenect2::Frame::Depth;
     libfreenect2::SyncMultiFrameListener listener(type);
     libfreenect2::FrameMap frames;
 
@@ -52,6 +58,8 @@ int main(int argc , char** argv)
                     break;
         }
         libfreenect2::Frame *rgb = frames[libfreenect2::Frame::Color];
+        libfreenect2::Frame *ir = frames[libfreenect2::Frame::Ir];
+        libfreenect2::Frame* depth = frames[libfreenect2::Frame::Depth];
 
         unsigned char* rgbdata = rgb->data;
         CvSize size;
@@ -67,11 +75,37 @@ int main(int argc , char** argv)
 
         IplImage* rgbimage = cvCreateImage(size,IPL_DEPTH_8U,1);
 
-
         cvSetData(rgbimage,BGRData, 1920);
-        cvShowImage("123",rgbimage);
+
+        cvShowImage("Blue Channel",rgbimage);
         cvWaitKey(0);
 
+        /*
+        unsigned char* irdata = ir->data;
+        CvSize size;
+        size.height = 424; size.width = 512;
+        IplImage* irimage = cvCreateImage(size,IPL_DEPTH_8U,1);
+        char* IRData = (char*)malloc(size.height*size.width*sizeof(char));
+
+        for (int i = 0; i != size.height; ++i){
+            for (int j = 0; j != size.width; ++j){
+                int idx = i*size.width + j;
+                char2f cf;
+                cf.c[0] = irdata[idx*4];
+                cf.c[1] = irdata[idx*4+1];
+                cf.c[2] = irdata[idx*4+2];
+                cf.c[3] = irdata[idx*4+3];
+                //std::cout << cf.f << std::endl;
+                int tmp = round(cf.f / 256.0);
+                IRData[idx] = (char)tmp;
+            }
+        }
+
+        cvSetData(irimage,IRData, 512);
+        cvShowImage("IR",irimage);
+        cvWaitKey(0);
+
+        */
         listener.release(frames);
     }
 
