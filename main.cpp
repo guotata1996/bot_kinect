@@ -5,9 +5,13 @@
 #include <libfreenect2/logger.h>
 
 #include <opencv2/opencv.hpp>
-
-
 #include <iostream>
+
+#define MIN(a, b) ((a)<(b)?(a):(b))
+
+//#define RGB
+//#define IR
+#define DEPTH
 
 union char2f{
     char c[4];
@@ -61,6 +65,7 @@ int main(int argc , char** argv)
         libfreenect2::Frame *ir = frames[libfreenect2::Frame::Ir];
         libfreenect2::Frame* depth = frames[libfreenect2::Frame::Depth];
 
+#ifdef RGB
         unsigned char* rgbdata = rgb->data;
         CvSize size;
         size.height = 1080; size.width = 1920;
@@ -78,9 +83,11 @@ int main(int argc , char** argv)
         cvSetData(rgbimage,BGRData, 1920);
 
         cvShowImage("Blue Channel",rgbimage);
-        cvWaitKey(0);
+        cvWaitKey(100);
 
-        /*
+#endif
+
+#ifdef IR
         unsigned char* irdata = ir->data;
         CvSize size;
         size.height = 424; size.width = 512;
@@ -95,17 +102,41 @@ int main(int argc , char** argv)
                 cf.c[1] = irdata[idx*4+1];
                 cf.c[2] = irdata[idx*4+2];
                 cf.c[3] = irdata[idx*4+3];
-                //std::cout << cf.f << std::endl;
                 int tmp = round(cf.f / 256.0);
                 IRData[idx] = (char)tmp;
             }
         }
 
-        cvSetData(irimage,IRData, 512);
+        cvSetData(irimage,IRData, size.width);
         cvShowImage("IR",irimage);
-        cvWaitKey(0);
+        cvWaitKey(100);
+#endif
 
-        */
+#ifdef DEPTH
+        unsigned char* depthdata = depth->data;
+        CvSize size;
+        size.height = 424; size.width = 512;
+        IplImage* depthImage = cvCreateImage(size,IPL_DEPTH_8U,1);
+        char* DEPTHData = (char*)malloc(size.height*size.width*sizeof(char));
+
+        for (int i = 0; i != size.height; ++i){
+            for (int j = 0; j != size.width; ++j){
+                int idx = i*size.width + j;
+                char2f cf;
+                cf.c[0] = depthdata[idx*4];
+                cf.c[1] = depthdata[idx*4+1];
+                cf.c[2] = depthdata[idx*4+2];
+                cf.c[3] = depthdata[idx*4+3];
+                int tmp = 255 - MIN(round(cf.f / 8.0),255);
+                DEPTHData[idx] = (char)tmp;
+            }
+        }
+
+        cvSetData(depthImage, DEPTHData, size.width);
+        cvShowImage("DEPTH", depthImage);
+        cvWaitKey(100);
+
+#endif
         listener.release(frames);
     }
 
