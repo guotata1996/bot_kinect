@@ -4,19 +4,18 @@
 #include <libfreenect2/packet_pipeline.h>
 #include <libfreenect2/logger.h>
 
-#include <opencv2/opencv.hpp>
+#include <vector>
 #include <iostream>
+#include <stdio.h>
 
+#include "util.h"
 #define MIN(a, b) ((a)<(b)?(a):(b))
 
 //#define RGB
 //#define IR
-#define DEPTH
-
-union char2f{
-    char c[4];
-    float f;
-};
+//#define DEPTH
+//#define RECOGNITION
+#define AVOID
 
 int main(int argc , char** argv)
 {
@@ -52,9 +51,10 @@ int main(int argc , char** argv)
     dev->setColorFrameListener(&listener);
     dev->setIrAndDepthFrameListener(&listener);
 
+
     if (!dev->start())
         return -1;
-
+    libfreenect2::Freenect2Device::ColorCameraParams camera_params = dev->getColorCameraParams();
 
     while (true){
         if (!listener.waitForNewFrame(frames , 30 * 1000)) {
@@ -74,15 +74,25 @@ int main(int argc , char** argv)
         for (int i = 0; i != size.height; ++i){
             for (int j = 0; j != size.width; ++j){
                 int idx = i*size.width+j;
-                BGRData[idx] = rgbdata[idx * 4];
+                char B = rgbdata[idx * 4];
+                char G = rgbdata[idx * 4 + 1];
+                char R = rgbdata[idx * 4 + 2];
+
+                int h = getH(char2int(R),char2int(G),char2int(B));
+                float s = getS(char2int(R),char2int(G),char2int(B));
+
+                if ((abs(h-15)<15 || abs(h-345)<15) && s > 0.6)
+                    BGRData[idx] = 255;
+                else
+                    BGRData[idx] = 0;
             }
         }
 
         IplImage* rgbimage = cvCreateImage(size,IPL_DEPTH_8U,1);
 
-        cvSetData(rgbimage,BGRData, 1920);
+        cvSetData(rgbimage,BGRData, size.width);
 
-        cvShowImage("Blue Channel",rgbimage);
+        cvShowImage("Red Channel",rgbimage);
         cvWaitKey(100);
 
 #endif
@@ -97,12 +107,7 @@ int main(int argc , char** argv)
         for (int i = 0; i != size.height; ++i){
             for (int j = 0; j != size.width; ++j){
                 int idx = i*size.width + j;
-                char2f cf;
-                cf.c[0] = irdata[idx*4];
-                cf.c[1] = irdata[idx*4+1];
-                cf.c[2] = irdata[idx*4+2];
-                cf.c[3] = irdata[idx*4+3];
-                int tmp = round(cf.f / 256.0);
+                int tmp = round(char2float(&(irdata[idx*4])) / 256.0);
                 IRData[idx] = (char)tmp;
             }
         }
@@ -137,6 +142,122 @@ int main(int argc , char** argv)
         cvWaitKey(100);
 
 #endif
+
+#ifdef RECOGNITION
+        libfreenect2::Registration *registration = new libfreenect2::Registration(dev->getIrCameraParams() , dev->getColorCameraParams());
+        libfreenect2::Frame undistorted(512 , 424 , 4) , registered(512 , 424 , 4);
+        registration->apply(rgb , depth , &undistorted , &registered);
+        unsigned char* registereddata = registered.data;
+        unsigned char* undistorteddata = undistorted.data;
+
+        CvSize size;
+        size.height = 424; size.width = 512;
+
+        char* REGISTERData = (char*)malloc(size.height*size.width*sizeof(char));
+
+        for (int i = 0; i != size.height; ++i){
+            for (int j = 0; j != size.width; ++j){
+                int idx = i*size.width+j;
+                char B = registereddata[idx * 4];
+                char G = registereddata[idx * 4 + 1];
+                char R = registereddata[idx * 4 + 2];
+
+                int h = getH(char2int(R),char2int(G),char2int(B));
+                float s = getS(char2int(R),char2int(G),char2int(B));
+
+                if ((abs(h - 360) < 15 || abs(h - 0) < 15) && s > 0.6)
+                    REGISTERData[idx] = 255;
+                else
+                    REGISTERData[idx] = 0;
+            }
+        }
+
+        IplImage* biimage = cvCreateImage(size,IPL_DEPTH_8U,1);
+        //IplImage* depthImage = cvCreateImage(size,IPL_DEPTH_8U,1);
+
+        cvSetData(biimage, REGISTERData, size.width);
+        //cvSetData(depthImage, DEPTHData, size.width);
+
+        CvMemStorage* storage = cvCreateMemStorage(0);
+        CvContourScanner scanner = NULL;
+        scanner = cvStartFindContours(biimage, storage, sizeof(CvContour), CV_RETR_CCOMP,CV_CHAIN_APPROX_NONE);
+
+        CvRect rect;
+        CvSeq* contour = NULL;
+        double minarea = 180.0, tmparea = 0.0, maxarea = 0.0;
+        int rec_x = 0, rec_y = 0;
+
+        while ((contour = cvFindNextContour(scanner)) != NULL){
+            tmparea = fabs(cvContourArea(contour));
+            rect = cvBoundingRect(contour);
+
+            if (tmparea > minarea && tmparea > maxarea){
+                rec_x = rect.x + rect.width / 2;
+                rec_y = rect.y + rect.height / 2;
+            }
+        }
+
+        //fetch depth data
+
+        if (rec_x != 0){
+            int idx = rec_x + rec_y*size.width;
+            float dep = char2float(&undistorteddata[idx*4]);
+            if (dep != 0){
+                int x = (rec_x - 282) * dep / camera_params.fx / 3.45;
+                std::cout << "depth is" << dep - 50 << " ; x is " << x << std::endl;
+            }
+        }
+
+#endif
+
+#ifdef AVOID
+        std::vector<float> ys,ds;
+        float[140] valid_ds;
+        
+        unsigned char* depthdata = depth->data;
+        CvSize size;
+        size.height = 424; size.width = 512;
+        IplImage* depthImage = cvCreateImage(size,IPL_DEPTH_8U,1);
+        char* DEPTHData = (char*)malloc(size.height*size.width*sizeof(char));
+
+        for (int i = 0; i != size.height; ++i){
+            for (int j = 0; j != size.width; ++j){
+                int idx = i*size.width + j;
+                char2f cf;
+                cf.c[0] = depthdata[idx*4];
+                cf.c[1] = depthdata[idx*4+1];
+                cf.c[2] = depthdata[idx*4+2];
+                cf.c[3] = depthdata[idx*4+3];
+                if (j == size.width / 2){
+                    ys.push_back(size.height - i);
+                    ds.push_back(1000.0 / cf.f);
+                }
+            }
+        }
+
+        //FILE* out = std::fopen("/home/guo/Documents/test/out.txt","w");
+        int valid_len = 0;
+
+        for (int i = 0; i != ys.size(); ++i){
+            if (ds.at(i) > 0.72 && ys.at(i) <= 140){
+                //std::fprintf(out, "%f %f\n",ys.at(i),ds.at(i));
+                valid_ds[valid_len] = ds.at(i);
+                valid_len ++;
+            }
+        }
+        //std::fclose(out);
+        histogram result = hist(valid_ds, valid_len);
+        float mean = valid_len * 1.0 / RESOLUTION;
+        float output = 0.0;
+        for(int i = hist.len; i >=0; --i){
+            if (result.cnt[i] > mean*2){
+                output = result.mid[i];
+                break;
+            }
+        }
+        std::cout << output;
+#endif
+
         listener.release(frames);
     }
 
