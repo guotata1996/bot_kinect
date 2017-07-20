@@ -212,7 +212,8 @@ int main(int argc , char** argv)
 
 #ifdef AVOID
         std::vector<float> ys,ds;
-        float[140] valid_ds;
+        float valid_ds[220];
+        float angle2dist[15];
         
         unsigned char* depthdata = depth->data;
         CvSize size;
@@ -220,42 +221,62 @@ int main(int argc , char** argv)
         IplImage* depthImage = cvCreateImage(size,IPL_DEPTH_8U,1);
         char* DEPTHData = (char*)malloc(size.height*size.width*sizeof(char));
 
-        for (int i = 0; i != size.height; ++i){
-            for (int j = 0; j != size.width; ++j){
+        for (int j = 25; j <= 487; j += 33){ /*25 58 .. 487*/
+        //for (int j = 490; j <= 490; ++j){ /*DEBUG*/
+            ys.clear();
+            ds.clear();
+
+            for (int i = 0; i != size.height; ++i){
                 int idx = i*size.width + j;
                 char2f cf;
                 cf.c[0] = depthdata[idx*4];
                 cf.c[1] = depthdata[idx*4+1];
                 cf.c[2] = depthdata[idx*4+2];
                 cf.c[3] = depthdata[idx*4+3];
-                if (j == size.width / 2){
-                    ys.push_back(size.height - i);
-                    ds.push_back(1000.0 / cf.f);
+
+                ys.push_back(size.height - i);
+                ds.push_back(1000.0 / cf.f);
+            }
+
+            int valid_len = 0;
+
+             /*DEBUG*/
+            //FILE* out = std::fopen("/home/guo/Documents/test/out_508.txt","w");
+            for (int k = 0; k != ys.size(); ++k){
+                if (ds.at(k) > 0.72 && ds.at(k) < 1.6 && ys.at(k) < 140){
+                     /*DEBUG*/
+                    //std::fprintf(out, "%f %f\n",ys.at(k),ds.at(k));
+
+                    valid_ds[valid_len] = ds.at(k);
+                    valid_len ++;
                 }
             }
+
+             /*DEBUG*/
+            //std::fclose(out);
+
+            histogram result = hist(valid_ds, valid_len);
+            float mean = valid_len * 1.0 / RESOLUTION;
+            float invdist = 0.0;
+
+
+            for(int i = result.len - 1; i >=0; --i){
+                if (result.cnt[i] > mean*2){
+                    invdist = result.mid[i];
+                    break;
+                }
+            }
+            angle2dist[(j - 25)/33] = invdist == 0 ? 0 : 1 / invdist;
         }
 
-        //FILE* out = std::fopen("/home/guo/Documents/test/out.txt","w");
-        int valid_len = 0;
+        for (int i = 0; i != 15; ++i){
+            if (angle2dist[i] > 0.1)
+                std::cout << 7 - i << " " << angle2dist[i] << std::endl;
+        }
 
-        for (int i = 0; i != ys.size(); ++i){
-            if (ds.at(i) > 0.72 && ys.at(i) <= 140){
-                //std::fprintf(out, "%f %f\n",ys.at(i),ds.at(i));
-                valid_ds[valid_len] = ds.at(i);
-                valid_len ++;
-            }
-        }
-        //std::fclose(out);
-        histogram result = hist(valid_ds, valid_len);
-        float mean = valid_len * 1.0 / RESOLUTION;
-        float output = 0.0;
-        for(int i = hist.len; i >=0; --i){
-            if (result.cnt[i] > mean*2){
-                output = result.mid[i];
-                break;
-            }
-        }
-        std::cout << output;
+        /*DEBUG*/
+        break;
+
 #endif
 
         listener.release(frames);

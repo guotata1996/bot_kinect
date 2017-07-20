@@ -8,7 +8,7 @@
 
 #include <iostream>
 
-#define RESOLUTION 15
+#define RESOLUTION 10
 
 struct histogram{
     int len = RESOLUTION;
