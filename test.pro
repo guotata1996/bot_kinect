@@ -4,11 +4,12 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += \
-    main.cpp
+    kinect.cpp \
+    test.cpp
 
 INCLUDEPATH += /home/guo/freenect2/include/
 LIBS += -L/home/guo/freenect2/lib/ -lfreenect2
 LIBS += -L/usr/local/lib/ -lopencv_core -lopencv_gpu -lopencv_highgui -lopencv_imgproc -lopencv_photo
 HEADERS += \
-    util.h
+    kinect.h
 
